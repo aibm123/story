@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Storytelling Content</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for dark mode */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* gray-900 */
+            color: #d1d5db; /* gray-300 */
+        }
+        .form-container {
+            background-color: #1f2937; /* gray-800 */
+            padding: 2rem;
+            border-radius: 0.75rem;
+            border: 1px solid #374151; /* gray-700 */
+        }
+        .btn-primary {
+            background-color: #4f46e5;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: background-color 0.3s;
+            border: none;
+        }
+        .btn-primary:hover {
+            background-color: #6366f1; /* indigo-500 */
+        }
+        .input-field {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid #4b5563; /* gray-600 */
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            background-color: #374151; /* gray-700 */
+            color: #f9fafb; /* gray-50 */
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 2px #4f46e5;
+        }
+        .card {
+            background-color: #1f2937; /* gray-800 */
+            border-radius: 0.75rem;
+            border: 1px solid #374151; /* gray-700 */
+            overflow: hidden;
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: #4f46e5;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .modal-content {
+            background-color: #1f2937; /* gray-800 */
+            padding: 2rem;
+            border-radius: 0.75rem;
+            width: 90%;
+            max-width: 500px;
+        }
+        .action-icon {
+            cursor: pointer;
+            transition: color 0.2s;
+            padding: 4px;
+        }
+        .action-icon:hover {
+            color: #818cf8; /* indigo-400 */
+        }
+        .loader {
+            border: 4px solid #374151;
+            border-top: 4px solid #6366f1;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 100;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .hidden {
+            display: none;
+        }
+        .auth-tab {
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .auth-tab.active {
+            color: #818cf8; /* indigo-400 */
+            border-bottom-color: #818cf8;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="p-4 md:p-8 max-w-7xl mx-auto"></div>
+    <div id="loader" class="loader hidden"></div>
+
+    <script type="module">
+        const API_HOST = "https://aibm.store/api";
+        const DB_TOKEN = "ClhAp0Bl7PzsrAdfKHHmMjh5XJC56U3x";
+
+        const TABLE_IDS = { user: 915, product: 952, theme: 953, look: 954, post: 955, gen: 956 };
+
+        const app = document.getElementById('app');
+        const loader = document.getElementById('loader');
+
+        // App state
+        let state = {
+            currentPage: 'content',
+            loginPageMode: 'login', // login, register
+            loggedInUser: null,
+            themes: [],
+            posts: [],
+            products: [],
+            looks: [],
+            postDetails: [],
+            genImages: [],
+            selectedTheme: null,
+            selectedLook: null,
+            selectedPost: null,
+            isLoading: false,
+        };
+
+        // --- API UTILS ---
+        const showLoader = (show) => {
+            loader.classList.toggle('hidden', !show);
+            state.isLoading = show;
+        };
+        
+        /**
+         * A centralized function to build Baserow filter parameters consistently.
+         * @param {number} userId - The ID of the logged-in user.
+         * @param {object|null} parentFilter - An object like { parentField: 'theme', parentId: 123 }.
+         * @returns {string} The fully formed filter query string.
+         */
+        function buildFilterParams(userId, parentFilter = null) {
+            // FIX: Using correct field names ('user', 'theme', etc.) without the incorrect 'field_' prefix.
+            // This is the core fix for all data filtering issues.
+            let filters = [`filter__user__link_row_has=${userId}`];
+            if (parentFilter && parentFilter.parentId) {
+                filters.push(`filter__${parentFilter.parentField}__link_row_has=${parentFilter.parentId}`);
+            }
+            return `&${filters.join('&')}&filter_type=AND`;
+        }
+
+        async function baserowApi(method, url, data = null) {
+            const options = {
+                method,
+                headers: {
+                    'Authorization': `Token ${DB_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+            try {
+                const response = await fetch(url, options);
+                
+                if (method === 'DELETE') {
+                    return response.ok ? { success: true } : { success: false, error: 'Delete operation failed on server' };
+                }
+                 if (response.status === 204) {
+                    return null;
+                }
+
+                const responseData = await response.json();
+                if (!response.ok) {
+                    console.error('API Error:', responseData);
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return responseData;
+
+            } catch (error) {
+                console.error("API call failed", error);
+                alert("Đã có lỗi xảy ra với API. Vui lòng thử lại.");
+                return { success: false, error: error.message };
+            }
+        }
+
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch(`${API_HOST}/user-files/upload-file/`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Token ${DB_TOKEN}` },
+                    body: formData,
+                });
+                if (!response.ok) throw new Error('File upload failed');
+                const result = await response.json();
+                return result;
+            } catch (error) {
+                console.error("File upload failed", error);
+                alert("Tải tệp lên thất bại.");
+                return null;
+            }
+        }
+        
+        // --- RENDER FUNCTIONS ---
+
+        function render() {
+            app.innerHTML = '';
+            showLoader(state.isLoading);
+
+            if (!state.loggedInUser) {
+                renderLoginPage();
+                return;
+            }
+            
+            renderNavbar();
+            
+            switch (state.currentPage) {
+                case 'content':
+                    renderContentPage();
+                    break;
+                case 'products':
+                    renderProductsPage();
+                    break;
+                default:
+                    renderContentPage();
+            }
+        }
+        
+        function renderNavbar() {
+            const nav = document.createElement('nav');
+            nav.className = "bg-[#1f2937] p-4 rounded-lg border border-[#374151] mb-8 flex flex-wrap justify-between items-center gap-4";
+            nav.innerHTML = `
+                <div>
+                    <button id="nav-content" class="px-4 py-2 rounded ${state.currentPage === 'content' ? 'bg-indigo-600 text-white' : 'hover:bg-gray-700'}">Nội dung</button>
+                    <button id="nav-products" class="px-4 py-2 rounded ${state.currentPage === 'products' ? 'bg-indigo-600 text-white' : 'hover:bg-gray-700'}">Sản phẩm</button>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="text-gray-400">Xin chào, ${state.loggedInUser.mail}</span>
+                    <button id="logout-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded">Đăng xuất</button>
+                </div>
+            `;
+            app.appendChild(nav);
+            
+            document.getElementById('nav-content').addEventListener('click', () => navigateTo('content'));
+            document.getElementById('nav-products').addEventListener('click', () => navigateTo('products'));
+            document.getElementById('logout-btn').addEventListener('click', handleLogout);
+        }
+
+        function renderLoginPage() {
+            app.innerHTML = `
+                <div class="min-h-screen flex items-center justify-center">
+                    <div class="w-full max-w-md">
+                        <div class="form-container">
+                            <div class="flex justify-center border-b border-gray-700 mb-6">
+                                <div id="login-tab" class="auth-tab ${state.loginPageMode === 'login' ? 'active' : ''}">Đăng nhập</div>
+                                <div id="register-tab" class="auth-tab ${state.loginPageMode === 'register' ? 'active' : ''}">Đăng ký</div>
+                            </div>
+                           
+                            <form id="login-form" class="${state.loginPageMode === 'login' ? '' : 'hidden'}">
+                                <h2 class="text-2xl font-bold mb-6 text-center text-white">Đăng nhập</h2>
+                                <input id="login-email" type="email" placeholder="Email" class="input-field" required>
+                                <input id="login-pass" type="password" placeholder="Mật khẩu" class="input-field" required>
+                                <button type="submit" class="btn-primary w-full">Đăng nhập</button>
+                            </form>
+                            
+                            <form id="register-form" class="${state.loginPageMode === 'register' ? '' : 'hidden'}">
+                                <h2 class="text-2xl font-bold mb-6 text-center text-white">Tạo tài khoản</h2>
+                                <input id="register-email" type="email" placeholder="Email" class="input-field" required>
+                                <input id="register-pass" type="password" placeholder="Mật khẩu" class="input-field" required>
+                                <button type="submit" class="btn-primary w-full bg-green-600 hover:bg-green-700">Đăng ký</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('login-tab').addEventListener('click', () => {
+                state.loginPageMode = 'login';
+                render();
+            });
+            document.getElementById('register-tab').addEventListener('click', () => {
+                state.loginPageMode = 'register';
+                render();
+            });
+            document.getElementById('login-form').addEventListener('submit', handleLogin);
+            document.getElementById('register-form').addEventListener('submit', handleRegister);
+        }
+        
+        function renderContentPage() {
+            const contentContainer = document.createElement('div');
+            if (state.selectedPost) {
+                renderPostDetailView(contentContainer);
+            } else if (state.selectedLook) {
+                renderLookDetailView(contentContainer);
+            } else if (state.selectedTheme) {
+                renderThemeDetailView(contentContainer);
+            } else {
+                renderContentHomeView(contentContainer);
+            }
+            app.appendChild(contentContainer);
+        }
+
+        function renderContentHomeView(container) {
+             container.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                    <div class="lg:col-span-3">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-bold text-white">Themes</h2>
+                            <svg id="refresh-content-btn" class="action-icon w-6 h-6 text-gray-400 hover:text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                        </div>
+                        <div id="themes-list" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+                        <div class="form-container mt-8">
+                            <h3 class="text-xl font-semibold mb-3 text-white">Tạo Theme mới</h3>
+                            <form id="create-theme-form">
+                                <input name="name" type="text" placeholder="Tên theme" class="input-field" required>
+                                <label class="block mb-2 text-sm font-medium text-gray-300">Ảnh nhân vật</label>
+                                <input name="file" type="file" class="block w-full text-sm rounded-lg cursor-pointer bg-gray-700 border-gray-600 text-gray-400 focus:outline-none placeholder-gray-400 mb-4" required>
+                                <button type="submit" class="btn-primary">Tạo Theme</button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-2">
+                         <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-bold text-white">Tất cả Posts</h2>
+                             <svg id="refresh-posts-btn" class="action-icon w-6 h-6 text-gray-400 hover:text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                        </div>
+                        <div id="posts-list" class="space-y-4"></div>
+                    </div>
+                </div>
+            `;
+
+            const themesList = container.querySelector('#themes-list');
+            state.themes.forEach(theme => {
+                const imageUrl = theme.file && theme.file.length > 0 ? theme.file[0].thumbnails.small.url : 'https://placehold.co/48x48/374151/d1d5db?text=...';
+                const themeEl = document.createElement('div');
+                themeEl.className = 'card p-4 text-center relative group';
+                themeEl.innerHTML = `
+                    <div class="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg class="action-icon edit-theme-btn" data-id="${theme.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        <svg class="action-icon delete-theme-btn" data-id="${theme.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </div>
+                    <div class="cursor-pointer view-theme-div" data-id="${theme.id}">
+                        <img src="${imageUrl}" alt="${theme.Name}" class="w-24 h-24 rounded-full object-cover border-2 border-gray-600 mx-auto">
+                        <span class="font-semibold text-white mt-4 block">${theme.Name}</span>
+                    </div>
+                `;
+                themesList.appendChild(themeEl);
+            });
+
+            const postsList = container.querySelector('#posts-list');
+             state.posts.forEach(post => {
+                const postEl = document.createElement('div');
+                postEl.className = 'card p-4 relative group';
+                postEl.innerHTML = `
+                    <div class="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg class="action-icon edit-post-btn" data-id="${post.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        <svg class="action-icon delete-post-btn" data-id="${post.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </div>
+                    <div class="cursor-pointer view-post-div" data-id="${post.id}">
+                        <h4 class="font-semibold text-white">${post.title}</h4>
+                    </div>
+                `;
+                postsList.appendChild(postEl);
+            });
+            
+            // Event listeners
+            container.querySelectorAll('.view-theme-div').forEach(el => el.addEventListener('click', e => viewTheme(e.currentTarget.dataset.id)));
+            container.querySelectorAll('.edit-theme-btn').forEach(el => el.addEventListener('click', e => handleEditTheme(e.currentTarget.dataset.id)));
+            container.querySelectorAll('.delete-theme-btn').forEach(el => el.addEventListener('click', e => handleDelete('theme', e.currentTarget.dataset.id)));
+            
+            container.querySelectorAll('.view-post-div').forEach(el => el.addEventListener('click', e => viewPost(e.currentTarget.dataset.id)));
+            container.querySelectorAll('.edit-post-btn').forEach(el => el.addEventListener('click', e => handleEditPost(e.currentTarget.dataset.id)));
+            container.querySelectorAll('.delete-post-btn').forEach(el => el.addEventListener('click', e => handleDelete('post', e.currentTarget.dataset.id)));
+
+            container.querySelector('#create-theme-form').addEventListener('submit', handleCreateTheme);
+            container.querySelector('#refresh-content-btn').addEventListener('click', () => initializeAppData());
+            container.querySelector('#refresh-posts-btn').addEventListener('click', () => initializeAppData());
+        }
+
+        function renderThemeDetailView(container) {
+            container.innerHTML = `
+                <button id="back-to-content" class="mb-6 inline-flex items-center gap-2 text-indigo-400 font-semibold hover:text-indigo-300">&larr; Quay lại danh sách</button>
+                <div class="flex flex-col md:flex-row gap-8 mb-8 items-start">
+                    <img src="${state.selectedTheme.file[0]?.url || ''}" class="w-48 h-48 object-cover rounded-xl border-2 border-gray-700"/>
+                    <div class="flex-grow">
+                         <div class="flex justify-between items-center">
+                            <h2 class="text-3xl font-bold text-white">Theme: ${state.selectedTheme.Name}</h2>
+                            <svg id="refresh-theme-btn" class="action-icon w-6 h-6 text-gray-400 hover:text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                         </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="text-xl font-bold mb-4 text-white">Looks</h3>
+                        <div id="looks-list" class="space-y-4">
+                           ${state.looks.length === 0 ? '<p class="text-gray-400">Chưa có look nào cho theme này.</p>' : ''}
+                        </div>
+                    </div>
+                    <div class="form-container">
+                        <h3 class="text-xl font-semibold mb-3 text-white">Tạo Look mới</h3>
+                        <form id="create-look-form">
+                            <textarea name="prompt" placeholder="Prompt" class="input-field h-32"></textarea>
+                            <button type="submit" class="btn-primary">Tạo Look</button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            
+            const looksList = container.querySelector('#looks-list');
+            state.looks.forEach(look => {
+                const lookEl = document.createElement('div');
+                lookEl.className = 'card p-4 relative group';
+                lookEl.innerHTML = `
+                     <div class="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg class="action-icon edit-look-btn" data-id="${look.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        <svg class="action-icon delete-look-btn" data-id="${look.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </div>
+                    <div class="cursor-pointer view-look-div" data-id="${look.id}">
+                        <h4 class="font-semibold text-white">Look #${look.id}</h4>
+                        <p class="text-sm text-gray-400 truncate">${look.prompt || 'Không có prompt'}</p>
+                    </div>
+                `;
+                looksList.appendChild(lookEl);
+            });
+
+            container.querySelectorAll('.view-look-div').forEach(el => el.addEventListener('click', e => viewLook(e.currentTarget.dataset.id)));
+            container.querySelectorAll('.edit-look-btn').forEach(el => el.addEventListener('click', e => handleEditLook(e.currentTarget.dataset.id)));
+            container.querySelectorAll('.delete-look-btn').forEach(el => el.addEventListener('click', e => handleDelete('look', e.currentTarget.dataset.id)));
+
+            container.querySelector('#back-to-content').addEventListener('click', viewContentHome);
+            container.querySelector('#create-look-form').addEventListener('submit', handleCreateLook);
+            container.querySelector('#refresh-theme-btn').addEventListener('click', () => viewTheme(state.selectedTheme.id));
+        }
+
+        function renderLookDetailView(container) {
+             container.innerHTML = `
+                <button id="back-to-theme" class="mb-6 inline-flex items-center gap-2 text-indigo-400 font-semibold hover:text-indigo-300">&larr; Quay lại Theme</button>
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-3xl font-bold text-white">Look #${state.selectedLook.id}</h2>
+                    <svg id="refresh-look-btn" class="action-icon w-6 h-6 text-gray-400 hover:text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                </div>
+                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="text-xl font-bold mb-4 text-white">Posts từ Look này</h3>
+                        <div id="posts-for-look-list" class="space-y-4">
+                            ${state.postDetails.length === 0 ? '<p class="text-gray-400">Chưa có post nào cho look này.</p>' : ''}
+                        </div>
+                    </div>
+                    <div class="form-container">
+                        <h3 class="text-xl font-semibold mb-3 text-white">Tạo Post mới</h3>
+                        <form id="create-post-form">
+                            <input name="title" type="text" placeholder="Tiêu đề" class="input-field" required>
+                            <select name="product" class="input-field" required>
+                                <option value="">Chọn sản phẩm</option>
+                                ${state.products.map(p => `<option value="${p.id}">${p.Name}</option>`).join('')}
+                            </select>
+                            <button type="submit" class="btn-primary">Tạo Post</button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            const postsForLookList = container.querySelector('#posts-for-look-list');
+            state.postDetails.forEach(post => {
+                 const postEl = document.createElement('div');
+                 postEl.className = 'card p-4 relative group';
+                 postEl.innerHTML = `
+                    <div class="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg class="action-icon edit-post-btn" data-id="${post.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        <svg class="action-icon delete-post-btn" data-id="${post.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </div>
+                    <div class="cursor-pointer view-post-div" data-id="${post.id}">
+                        <h4 class="font-semibold text-white">${post.title}</h4>
+                    </div>
+                 `;
+                 postsForLookList.appendChild(postEl);
+            });
+            
+            container.querySelectorAll('.view-post-div').forEach(el => el.addEventListener('click', e => viewPost(e.currentTarget.dataset.id)));
+            container.querySelectorAll('.edit-post-btn').forEach(el => el.addEventListener('click', e => handleEditPost(e.currentTarget.dataset.id)));
+            container.querySelectorAll('.delete-post-btn').forEach(el => el.addEventListener('click', e => handleDelete('post', e.currentTarget.dataset.id)));
+
+            container.querySelector('#back-to-theme').addEventListener('click', () => viewTheme(state.selectedTheme.id));
+            container.querySelector('#create-post-form').addEventListener('submit', handleCreatePost);
+            container.querySelector('#refresh-look-btn').addEventListener('click', () => viewLook(state.selectedLook.id));
+        }
+        
+        function renderPostDetailView(container) {
+            const backButtonHtml = state.selectedLook
+                ? `<button id="back-to-look" class="mb-6 inline-flex items-center gap-2 text-indigo-400 font-semibold hover:text-indigo-300">&larr; Quay lại Look</button>`
+                : `<button id="back-to-content" class="mb-6 inline-flex items-center gap-2 text-indigo-400 font-semibold hover:text-indigo-300">&larr; Quay lại danh sách</button>`;
+
+            container.innerHTML = `
+                ${backButtonHtml}
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-3xl font-bold text-white">${state.selectedPost.title}</h2>
+                    <svg id="refresh-post-btn" class="action-icon w-6 h-6 text-gray-400 hover:text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                </div>
+                <div class="form-container mb-8">
+                    <h3 class="text-xl font-semibold mb-2 text-white">Caption</h3>
+                    <p class="text-gray-300 whitespace-pre-wrap">${state.selectedPost.content || ''}</p>
+                </div>
+                <div>
+                    <h3 class="text-2xl font-bold mb-4 text-white">Hình ảnh</h3>
+                    <div id="gen-images-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        ${state.genImages.length === 0 ? '<p class="text-gray-400">Không có hình ảnh nào được tạo.</p>' : ''}
+                    </div>
+                </div>
+            `;
+            
+            const imageList = container.querySelector('#gen-images-list');
+            state.genImages.forEach(gen => {
+                if (gen.file && gen.file.length > 0) {
+                    const imgContainer = document.createElement('div');
+                    imgContainer.className = "overflow-hidden rounded-lg border border-gray-700";
+                    imgContainer.innerHTML = `<img src="${gen.file[0].url}" alt="Generated image" class="w-full h-full object-cover">`;
+                    imageList.appendChild(imgContainer);
+                }
+            });
+
+            if (state.selectedLook) {
+                container.querySelector('#back-to-look').addEventListener('click', () => viewLook(state.selectedLook.id));
+            } else {
+                container.querySelector('#back-to-content').addEventListener('click', viewContentHome);
+            }
+            container.querySelector('#refresh-post-btn').addEventListener('click', () => viewPost(state.selectedPost.id));
+        }
+
+        function renderProductsPage() {
+            const productContainer = document.createElement('div');
+            productContainer.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2">
+                         <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-bold text-white">Danh sách Sản phẩm</h2>
+                            <svg id="refresh-products-btn" class="action-icon w-6 h-6 text-gray-400 hover:text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                        </div>
+                        <div id="products-list" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+                    </div>
+                    <div class="form-container">
+                        <h3 class="text-xl font-semibold mb-3 text-white">Thêm Sản phẩm mới</h3>
+                        <form id="create-product-form">
+                            <input name="name" type="text" placeholder="Tên sản phẩm" class="input-field" required>
+                             <label class="block mb-2 text-sm font-medium text-gray-300">Ảnh sản phẩm</label>
+                            <input name="file" type="file" class="block w-full text-sm rounded-lg cursor-pointer bg-gray-700 border-gray-600 text-gray-400 focus:outline-none placeholder-gray-400 mb-4" required>
+                            <button type="submit" class="btn-primary">Thêm Sản phẩm</button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            
+            const productsList = productContainer.querySelector('#products-list');
+            state.products.forEach(product => {
+                const imageUrl = product.file && product.file.length > 0 ? product.file[0].thumbnails.card_cover.url : 'https://placehold.co/300x160/1f2937/d1d5db?text=...';
+                const productEl = document.createElement('div');
+                productEl.className = 'card p-4 text-center relative group';
+                productEl.innerHTML = `
+                    <div class="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg class="action-icon edit-product-btn" data-id="${product.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        <svg class="action-icon delete-product-btn" data-id="${product.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </div>
+                    <img src="${imageUrl}" alt="${product.Name}" class="w-full h-32 object-contain mb-4 rounded-md">
+                    <h4 class="font-semibold text-white">${product.Name}</h4>
+                `;
+                productsList.appendChild(productEl);
+            });
+
+            app.appendChild(productContainer);
+            productContainer.querySelectorAll('.edit-product-btn').forEach(el => el.addEventListener('click', e => handleEditProduct(e.currentTarget.dataset.id)));
+            productContainer.querySelectorAll('.delete-product-btn').forEach(el => el.addEventListener('click', e => handleDelete('product', e.currentTarget.dataset.id)));
+            document.getElementById('create-product-form').addEventListener('submit', handleCreateProduct);
+            document.getElementById('refresh-products-btn').addEventListener('click', () => navigateTo('products'));
+        }
+
+        // --- EVENT HANDLERS & LOGIC ---
+        
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const pass = document.getElementById('login-pass').value;
+            
+            showLoader(true);
+            const data = await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.user}/?user_field_names=true`);
+            showLoader(false);
+
+            if (data && data.results) {
+                const user = data.results.find(u => u.mail === email && u.pass === pass);
+                if (user) {
+                    state.loggedInUser = { id: user.id, mail: user.mail };
+                    await initializeAppData();
+                } else {
+                    alert("Email hoặc mật khẩu không đúng.");
+                }
+            }
+        }
+        
+        async function handleRegister(e) {
+            e.preventDefault();
+            const email = document.getElementById('register-email').value;
+            const pass = document.getElementById('register-pass').value;
+
+            showLoader(true);
+            const { results } = await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.user}/?user_field_names=true`);
+            const userExists = results.some(u => u.mail === email);
+
+            if (userExists) {
+                showLoader(false);
+                alert("Email đã tồn tại.");
+                return;
+            }
+
+            const newUser = await baserowApi('POST', `${API_HOST}/database/rows/table/${TABLE_IDS.user}/?user_field_names=true`, { mail: email, pass: pass });
+            showLoader(false);
+            
+            if (newUser) {
+                state.loggedInUser = { id: newUser.id, mail: newUser.mail };
+                await initializeAppData();
+            }
+        }
+
+        function handleLogout() {
+            state.loggedInUser = null;
+            state.currentPage = 'content';
+            render();
+        }
+
+        async function handleCreateTheme(e) {
+            e.preventDefault();
+            const form = e.target;
+            const name = form.elements.name.value;
+            const file = form.elements.file.files[0];
+            if (!file) {
+                alert("Vui lòng chọn một tệp ảnh.");
+                return;
+            }
+            
+            showLoader(true);
+            const uploadedFile = await uploadFile(file);
+            if (uploadedFile) {
+                 const newTheme = await baserowApi('POST', `${API_HOST}/database/rows/table/${TABLE_IDS.theme}/?user_field_names=true`, {
+                    'Name': name,
+                    'file': [{ name: uploadedFile.name }],
+                    'user': [state.loggedInUser.id]
+                });
+                if (newTheme) {
+                    await initializeAppData(); // FIX: Refresh all data from server
+                } else {
+                    showLoader(false);
+                }
+            } else {
+                showLoader(false);
+            }
+        }
+        
+        async function handleCreateLook(e) {
+            e.preventDefault();
+            const form = e.target;
+            const prompt = form.elements.prompt.value;
+
+            showLoader(true);
+            const newLook = await baserowApi('POST', `${API_HOST}/database/rows/table/${TABLE_IDS.look}/?user_field_names=true`, {
+                'prompt': prompt,
+                'theme': [state.selectedTheme.id],
+                'user': [state.loggedInUser.id]
+            });
+            
+            if (newLook) {
+                await viewTheme(state.selectedTheme.id); // FIX: Refresh current theme view from server
+            } else {
+                showLoader(false);
+            }
+        }
+
+        async function handleCreatePost(e) {
+            e.preventDefault();
+            const form = e.target;
+            const title = form.elements.title.value;
+            const productId = form.elements.product.value;
+            
+            showLoader(true);
+            const newPost = await baserowApi('POST', `${API_HOST}/database/rows/table/${TABLE_IDS.post}/?user_field_names=true`, {
+                'title': title,
+                'product': [parseInt(productId)],
+                'look': [state.selectedLook.id],
+                'user': [state.loggedInUser.id]
+            });
+
+            if(newPost) {
+                await viewLook(state.selectedLook.id); // FIX: Refresh current look view from server
+            } else {
+                showLoader(false);
+            }
+        }
+        
+        async function handleCreateProduct(e) {
+            e.preventDefault();
+            const form = e.target;
+            const name = form.elements.name.value;
+            const file = form.elements.file.files[0];
+             if (!file) {
+                alert("Vui lòng chọn một tệp ảnh.");
+                return;
+            }
+
+            showLoader(true);
+            const uploadedFile = await uploadFile(file);
+             if (uploadedFile) {
+                 const newProduct = await baserowApi('POST', `${API_HOST}/database/rows/table/${TABLE_IDS.product}/?user_field_names=true`, {
+                    'Name': name,
+                    'file': [{ name: uploadedFile.name }],
+                    'user': [state.loggedInUser.id]
+                });
+                 if (newProduct) {
+                    await navigateTo('products'); // FIX: Refresh products page from server
+                } else {
+                    showLoader(false);
+                }
+            } else {
+                showLoader(false);
+            }
+        }
+        
+        // --- EDIT & DELETE HANDLERS ---
+        async function handleDelete(type, id) {
+            if (!confirm(`Bạn có chắc chắn muốn xóa mục này không?`)) return;
+
+            showLoader(true);
+            const tableId = TABLE_IDS[type];
+            const result = await baserowApi('DELETE', `${API_HOST}/database/rows/table/${tableId}/${id}/`);
+
+            if (result && result.success) {
+                // FIX: Instead of manually filtering state, re-fetch data for the current view.
+                // This ensures data consistency after any deletion.
+                if (type === 'product') {
+                    await navigateTo('products');
+                } else if (state.selectedLook && (type === 'post')) {
+                    await viewLook(state.selectedLook.id);
+                } else if (state.selectedTheme && (type === 'look')) {
+                    await viewTheme(state.selectedTheme.id);
+                } else {
+                    await initializeAppData(); // Covers deleting themes/posts from home page
+                }
+            } else {
+                 showLoader(false);
+                 alert('Xóa thất bại. Vui lòng thử lại.');
+            }
+        }
+
+        function renderEditModal(title, fields, record, handleSubmit) {
+            const modalOverlay = document.createElement('div');
+            modalOverlay.className = 'modal-overlay';
+            
+            let fieldsHtml = '';
+            for (const field of fields) {
+                if (field.type === 'textarea') {
+                    fieldsHtml += `<label class="block mb-2 text-sm font-medium text-gray-300">${field.label}</label>
+                                 <textarea name="${field.name}" class="input-field h-24">${record[field.name] || ''}</textarea>`;
+                } else if (field.type === 'select') {
+                     fieldsHtml += `<label class="block mb-2 text-sm font-medium text-gray-300">${field.label}</label>
+                                  <select name="${field.name}" class="input-field">
+                                    ${field.options.map(opt => `<option value="${opt.id}" ${record[field.name] && record[field.name][0]?.id == opt.id ? 'selected' : ''}>${opt.Name || opt.title}</option>`).join('')}
+                                  </select>`;
+                }
+                else {
+                    fieldsHtml += `<label class="block mb-2 text-sm font-medium text-gray-300">${field.label}</label>
+                                 <input type="${field.type || 'text'}" name="${field.name}" value="${record[field.name] || ''}" class="input-field">`;
+                }
+            }
+
+            modalOverlay.innerHTML = `
+                <div class="modal-content">
+                    <h3 class="text-xl font-bold mb-6 text-white">${title}</h3>
+                    <form id="edit-form">
+                        ${fieldsHtml}
+                        <div class="flex justify-end gap-4 mt-6">
+                            <button type="button" id="cancel-edit" class="px-4 py-2 rounded bg-gray-600 hover:bg-gray-500">Hủy</button>
+                            <button type="submit" class="btn-primary">Lưu thay đổi</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+
+            document.body.appendChild(modalOverlay);
+
+            const form = modalOverlay.querySelector('#edit-form');
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = new FormData(form);
+                const data = {};
+                for (let [key, value] of formData.entries()) {
+                     if (fields.find(f => f.name === key && f.type === 'select')) {
+                        data[key] = [parseInt(value)];
+                    } else {
+                        data[key] = value;
+                    }
+                }
+                handleSubmit(data);
+                document.body.removeChild(modalOverlay);
+            });
+
+            modalOverlay.querySelector('#cancel-edit').addEventListener('click', () => {
+                document.body.removeChild(modalOverlay);
+            });
+        }
+
+        async function handleEditTheme(id) {
+            const theme = state.themes.find(t => t.id == id);
+            if (!theme) return;
+
+            renderEditModal('Chỉnh sửa Theme', [{name: 'Name', label: 'Tên Theme'}], theme, async (data) => {
+                showLoader(true);
+                const updatedTheme = await baserowApi('PATCH', `${API_HOST}/database/rows/table/${TABLE_IDS.theme}/${id}/?user_field_names=true`, data);
+                showLoader(false);
+                if (updatedTheme) {
+                    const index = state.themes.findIndex(t => t.id == id);
+                    state.themes[index] = updatedTheme;
+                    render(); // Re-render with local change for speed
+                }
+            });
+        }
+
+        async function handleEditLook(id) {
+            const look = state.looks.find(l => l.id == id);
+            if (!look) return;
+
+            renderEditModal('Chỉnh sửa Look', [{name: 'prompt', label: 'Prompt', type: 'textarea'}], look, async (data) => {
+                showLoader(true);
+                const updatedLook = await baserowApi('PATCH', `${API_HOST}/database/rows/table/${TABLE_IDS.look}/${id}/?user_field_names=true`, data);
+                if (updatedLook) {
+                    await viewTheme(state.selectedTheme.id); // FIX: Refresh view
+                } else {
+                    showLoader(false);
+                }
+            });
+        }
+
+        async function handleEditPost(id) {
+            const post = state.posts.find(p => p.id == id) || state.postDetails.find(p => p.id == id);
+            if (!post) return;
+
+            const fields = [
+                { name: 'title', label: 'Tiêu đề' },
+                { name: 'content', label: 'Nội dung', type: 'textarea' },
+                { name: 'product', label: 'Sản phẩm', type: 'select', options: state.products },
+            ];
+            
+            renderEditModal('Chỉnh sửa Post', fields, post, async (data) => {
+                showLoader(true);
+                const updatedPost = await baserowApi('PATCH', `${API_HOST}/database/rows/table/${TABLE_IDS.post}/${id}/?user_field_names=true`, data);
+                
+                if (updatedPost) {
+                    if (state.selectedLook) {
+                        await viewLook(state.selectedLook.id); // FIX: Refresh look view
+                    } else {
+                        await initializeAppData(); // FIX: Refresh home view
+                    }
+                } else {
+                    showLoader(false);
+                }
+            });
+        }
+        
+         async function handleEditProduct(id) {
+            const product = state.products.find(p => p.id == id);
+            if (!product) return;
+
+            renderEditModal('Chỉnh sửa Sản phẩm', [{name: 'Name', label: 'Tên sản phẩm'}], product, async (data) => {
+                showLoader(true);
+                const updatedProduct = await baserowApi('PATCH', `${API_HOST}/database/rows/table/${TABLE_IDS.product}/${id}/?user_field_names=true`, data);
+                if (updatedProduct) {
+                   await navigateTo('products'); // FIX: Refresh products page
+                } else {
+                    showLoader(false);
+                }
+            });
+        }
+
+
+        // --- NAVIGATION & DATA VIEW LOGIC (REFACTORED) ---
+        function clearSelections() {
+            state.selectedTheme = null;
+            state.selectedLook = null;
+            state.selectedPost = null;
+        }
+        
+        async function viewContentHome() {
+            clearSelections();
+            render();
+        }
+
+        async function viewTheme(themeId) {
+            showLoader(true);
+            clearSelections();
+            const theme = await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.theme}/${themeId}/?user_field_names=true`);
+            const lookFilter = buildFilterParams(state.loggedInUser.id, { parentField: 'theme', parentId: themeId });
+            const { results } = await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.look}/?user_field_names=true${lookFilter}`);
+            showLoader(false);
+            if(theme) {
+                state.selectedTheme = theme;
+                state.looks = results || [];
+                render();
+            }
+        }
+        
+        async function viewLook(lookId) {
+             showLoader(true);
+             state.selectedPost = null;
+             const look = await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.look}/${lookId}/?user_field_names=true`);
+             const postFilter = buildFilterParams(state.loggedInUser.id, { parentField: 'look', parentId: lookId });
+             const { results } = await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.post}/?user_field_names=true${postFilter}`);
+             showLoader(false);
+
+             if(look) {
+                state.selectedLook = look;
+                const themeId = look.theme[0]?.id;
+                if (themeId && (!state.selectedTheme || state.selectedTheme.id != themeId)) {
+                     state.selectedTheme = await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.theme}/${themeId}/?user_field_names=true`);
+                }
+                state.postDetails = results || [];
+                render();
+             }
+        }
+
+        async function viewPost(postId) {
+            showLoader(true);
+            clearSelections();
+            const post = await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.post}/${postId}/?user_field_names=true`);
+            if (!post) {
+                showLoader(false); return;
+            }
+
+            const genFilter = buildFilterParams(state.loggedInUser.id, { parentField: 'post', parentId: postId });
+            const { results } = await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.gen}/?user_field_names=true${genFilter}`);
+            
+            // Reconstruct breadcrumb for consistent navigation
+            const lookId = post.look[0]?.id;
+            const look = lookId ? await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.look}/${lookId}/?user_field_names=true`) : null;
+            const themeId = look?.theme[0]?.id;
+            const theme = themeId ? await baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.theme}/${themeId}/?user_field_names=true`) : null;
+            
+            showLoader(false);
+
+            state.selectedPost = post;
+            state.genImages = results || [];
+            state.selectedLook = look;
+            state.selectedTheme = theme;
+            render();
+        }
+
+        async function navigateTo(page) {
+            state.currentPage = page;
+            clearSelections();
+            await initializeAppData(); 
+        }
+
+        async function initializeAppData() {
+            showLoader(true);
+            const userFilter = buildFilterParams(state.loggedInUser.id);
+            const [themesData, postsData, productsData] = await Promise.all([
+                baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.theme}/?user_field_names=true&size=200${userFilter}`),
+                baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.post}/?user_field_names=true&size=200${userFilter}`),
+                baserowApi('GET', `${API_HOST}/database/rows/table/${TABLE_IDS.product}/?user_field_names=true&size=200${userFilter}`),
+            ]);
+            showLoader(false);
+
+            state.themes = themesData?.results || [];
+            state.posts = postsData?.results || [];
+            state.products = productsData?.results || [];
+            render();
+        }
+        
+        // Initial Load
+        render();
+
+    </script>
+</body>
+</html>
+
