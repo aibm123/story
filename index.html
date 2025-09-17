@@ -620,6 +620,8 @@
             if (data && data.results) {
                 const user = data.results.find(u => u.mail === email && u.pass === pass);
                 if (user) {
+                    state.currentPage = 'content'; // Reset về trang chủ
+                    clearSelections(); // Xóa lựa chọn của người dùng cũ
                     state.loggedInUser = { id: user.id, mail: user.mail };
                     localStorage.setItem('loggedInUser', JSON.stringify(state.loggedInUser)); // Lưu người dùng vào trình duyệt
                     await initializeAppData();
@@ -648,6 +650,8 @@
             showLoader(false);
             
             if (newUser) {
+                state.currentPage = 'content'; // Reset về trang chủ
+                clearSelections(); // Xóa lựa chọn của người dùng cũ
                 state.loggedInUser = { id: newUser.id, mail: newUser.mail };
                 localStorage.setItem('loggedInUser', JSON.stringify(state.loggedInUser)); // Lưu người dùng vào trình duyệt
                 await initializeAppData();
@@ -1037,4 +1041,5 @@
     </script>
 </body>
 </html>
+
 
