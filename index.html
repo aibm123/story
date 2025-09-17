@@ -459,12 +459,20 @@
         }
 
         function renderLookDetailView(container) {
+             const lookImageUrl = state.selectedLook.file && state.selectedLook.file.length > 0 ? state.selectedLook.file[0].url : 'https://placehold.co/192x192/1f2937/d1d5db?text=Look';
              container.innerHTML = `
                 <button id="back-to-theme" class="mb-6 inline-flex items-center gap-2 text-indigo-400 font-semibold hover:text-indigo-300">&larr; Quay lại Theme</button>
-                <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-3xl font-bold text-white">Look #${state.selectedLook.id}</h2>
-                    <svg id="refresh-look-btn" class="action-icon w-6 h-6 text-gray-400 hover:text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                
+                <div class="flex flex-col md:flex-row gap-8 mb-8 items-start">
+                    <img src="${lookImageUrl}" class="w-48 h-48 object-cover rounded-xl border-2 border-gray-700"/>
+                    <div class="flex-grow">
+                        <div class="flex justify-between items-center">
+                            <h2 class="text-3xl font-bold text-white">Look #${state.selectedLook.id}</h2>
+                            <svg id="refresh-look-btn" class="action-icon w-6 h-6 text-gray-400 hover:text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.18-3.182a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                        </div>
+                    </div>
                 </div>
+
                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <div>
                         <h3 class="text-xl font-bold mb-4 text-white">Posts từ Look này</h3>
@@ -1017,5 +1025,6 @@
     </script>
 </body>
 </html>
+
 
 
