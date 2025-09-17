@@ -419,7 +419,9 @@
                     <div class="form-container">
                         <h3 class="text-xl font-semibold mb-3 text-white">Tạo Look mới</h3>
                         <form id="create-look-form">
-                            <textarea name="prompt" placeholder="Prompt" class="input-field h-32"></textarea>
+                            <textarea name="prompt" placeholder="Prompt" class="input-field h-24"></textarea>
+                            <label class="block mb-2 text-sm font-medium text-gray-300">Ảnh Look (tùy chọn)</label>
+                            <input name="file" type="file" class="block w-full text-sm rounded-lg cursor-pointer bg-gray-700 border-gray-600 text-gray-400 focus:outline-none placeholder-gray-400 mb-4">
                             <button type="submit" class="btn-primary">Tạo Look</button>
                         </form>
                     </div>
@@ -428,6 +430,7 @@
             
             const looksList = container.querySelector('#looks-list');
             state.looks.forEach(look => {
+                const lookImageUrl = look.file && look.file.length > 0 ? look.file[0].thumbnails.small.url : 'https://placehold.co/64x64/374151/d1d5db?text=Look';
                 const lookEl = document.createElement('div');
                 lookEl.className = 'card p-4 relative group';
                 lookEl.innerHTML = `
@@ -435,9 +438,12 @@
                         <svg class="action-icon edit-look-btn" data-id="${look.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         <svg class="action-icon delete-look-btn" data-id="${look.id}" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                     </div>
-                    <div class="cursor-pointer view-look-div" data-id="${look.id}">
-                        <h4 class="font-semibold text-white">Look #${look.id}</h4>
-                        <p class="text-sm text-gray-400 truncate">${look.prompt || 'Không có prompt'}</p>
+                    <div class="cursor-pointer view-look-div flex items-center gap-4" data-id="${look.id}">
+                        <img src="${lookImageUrl}" alt="Look #${look.id}" class="w-16 h-16 object-cover rounded-md border border-gray-600">
+                        <div>
+                            <h4 class="font-semibold text-white">Look #${look.id}</h4>
+                            <p class="text-sm text-gray-400 truncate">${look.prompt || 'Không có prompt'}</p>
+                        </div>
                     </div>
                 `;
                 looksList.appendChild(lookEl);
@@ -675,13 +681,30 @@
             e.preventDefault();
             const form = e.target;
             const prompt = form.elements.prompt.value;
+            const file = form.elements.file.files[0];
 
             showLoader(true);
-            const newLook = await baserowApi('POST', `${API_HOST}/database/rows/table/${TABLE_IDS.look}/?user_field_names=true`, {
+
+            let uploadedFile = null;
+            if (file) {
+                uploadedFile = await uploadFile(file);
+                if (!uploadedFile) {
+                    showLoader(false);
+                    return; // Dừng lại nếu tải lên thất bại
+                }
+            }
+
+            const lookData = {
                 'prompt': prompt,
                 'theme': [state.selectedTheme.id],
                 'user': [state.loggedInUser.id]
-            });
+            };
+
+            if (uploadedFile) {
+                lookData.file = [{ name: uploadedFile.name }];
+            }
+
+            const newLook = await baserowApi('POST', `${API_HOST}/database/rows/table/${TABLE_IDS.look}/?user_field_names=true`, lookData);
             
             if (newLook) {
                 await viewTheme(state.selectedTheme.id); // FIX: Refresh current theme view from server
@@ -745,7 +768,7 @@
 
             showLoader(true);
             const tableId = TABLE_IDS[type];
-            const result = await baserowApi('DELETE', `${API_HOST}/database/rows/table/${tableId}/${id}/`);
+            const result = await baserowApi('DELETE', `${API_HOST}/database/rows/table/${tableId}/${id}/?user_field_names=true`);
 
             if (result && result.success) {
                 // FIX: Instead of manually filtering state, re-fetch data for the current view.
@@ -994,4 +1017,5 @@
     </script>
 </body>
 </html>
+
 
