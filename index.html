@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Storytelling Content</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Custom styles for dark mode */
@@ -620,6 +621,7 @@
                 const user = data.results.find(u => u.mail === email && u.pass === pass);
                 if (user) {
                     state.loggedInUser = { id: user.id, mail: user.mail };
+                    localStorage.setItem('loggedInUser', JSON.stringify(state.loggedInUser)); // Lưu người dùng vào trình duyệt
                     await initializeAppData();
                 } else {
                     alert("Email hoặc mật khẩu không đúng.");
@@ -647,12 +649,14 @@
             
             if (newUser) {
                 state.loggedInUser = { id: newUser.id, mail: newUser.mail };
+                localStorage.setItem('loggedInUser', JSON.stringify(state.loggedInUser)); // Lưu người dùng vào trình duyệt
                 await initializeAppData();
             }
         }
 
         function handleLogout() {
             state.loggedInUser = null;
+            localStorage.removeItem('loggedInUser'); // Xóa người dùng khỏi trình duyệt
             state.currentPage = 'content';
             render();
         }
@@ -890,7 +894,6 @@
 
             const fields = [
                 { name: 'title', label: 'Tiêu đề' },
-                { name: 'content', label: 'Nội dung', type: 'textarea' },
                 { name: 'product', label: 'Sản phẩm', type: 'select', options: state.products },
             ];
             
@@ -1020,11 +1023,18 @@
         }
         
         // Initial Load
-        render();
+        async function initializeApp() {
+            const savedUserJSON = localStorage.getItem('loggedInUser');
+            if (savedUserJSON) {
+                state.loggedInUser = JSON.parse(savedUserJSON);
+                await initializeAppData();
+            } else {
+                render(); // Hiển thị trang đăng nhập nếu không có người dùng nào được lưu
+            }
+        }
+        initializeApp();
 
     </script>
 </body>
 </html>
-
-
 
